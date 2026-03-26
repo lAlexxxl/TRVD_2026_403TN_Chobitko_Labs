@@ -1,35 +1,84 @@
-using GameVault.Api.Services; // Обов'язково додаємо посилання на наші сервіси
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using GameVault.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --- 1. РЕЄСТРАЦІЯ СЕРВІСІВ (Dependency Injection) ---
+// --- 1. РЕЄСТРАЦІЯ СЕРВІСІВ (DI Container) ---
 
-// Додаємо підтримку контролерів (те, що ми створили в папці Controllers)
 builder.Services.AddControllers();
-
-// Реєструємо наш GameService як Singleton (один екземпляр на весь час роботи)
-builder.Services.AddSingleton<GameService>();
-
-// Налаштування Swagger (документації API)
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new() { Title = "GameVault API", Version = "v1" });
+    
+    // Додаємо поле для введення JWT токена
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Вставте ваш JWT токен сюди: Bearer {token}"
+    });
+
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            new string[] {}
+        }
+    });
+});
+
+// Реєструємо твої сервіси для роботи з базою та безпекою
+builder.Services.AddSingleton<GameService>();
+builder.Services.AddSingleton<AuthService>();
+
+// НАЛАШТУВАННЯ JWT АВТЕНТИФІКАЦІЇ
+var jwtKey = builder.Configuration["Jwt:Key"];
+if (string.IsNullOrEmpty(jwtKey)) throw new Exception("JWT Key is missing in appsettings.json!");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        };
+    });
+
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// --- 2. НАЛАШТУВАННЯ КОНВЕЄРА (Middleware) ---
+// --- 2. НАЛАШТУВАННЯ MIDDLEWARE (Pipeline) ---
 
-// Якщо ми в режимі розробки — вмикаємо Swagger
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
-
+// ВАЖЛИВО: Authentication має бути ПЕРЕД Authorization
+app.UseAuthentication(); 
 app.UseAuthorization();
 
-// Кажемо програмі шукати маршрути в наших контролерах
 app.MapControllers();
 
 app.Run();
