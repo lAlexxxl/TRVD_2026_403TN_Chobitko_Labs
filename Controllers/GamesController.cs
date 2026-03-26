@@ -62,7 +62,7 @@ public class GamesController : ControllerBase
     }
 
     // 4. ADMIN ROUTE: Доступно тільки користувачам з Role = "Admin"
-    [Authorize(Roles = "Admin")]
+    [Authorize]
     [HttpDelete("{id:length(24)}")]
     public async Task<IActionResult> Delete(string id)
     {
